@@ -134,13 +134,15 @@ builder refuses `--runtime` and builds on DDEV only.
 
 | | DDEV | Docker Compose | Kubernetes | Podman |
 | --- | --- | --- | --- | --- |
-| Build and install, with the default accounts | Yes | Yes, in the CI of the pull request that added it | Not yet run | Not yet run |
-| The pages and the login | Yes | Yes, in the CI of the pull request that added it | Not yet run | Not yet run |
-| The row in the dashboard, with the test users in its Tests menu | Yes | Yes, in the CI of the pull request that added it | Not yet run | Not yet run |
-| The testing setup and the suite | Yes | Not yet run | Not yet run | Not yet run |
-| Export and import the database, remove | Yes | Not yet run | Not yet run | Not yet run |
+| Build and install, with the default accounts (and the visual editor) | Yes | Yes, with webship/workspace#723 | Yes, with webship/workspace#723 | The same code as Docker Compose, not yet run |
+| The main page, the login page, the REST API and the action API | Yes | Yes | Yes | Not yet run |
+| `cmd-tools-mediawiki-maintenance.sh`: what the wiki is, `--run`, `--jobs` | Yes | Yes | Yes | Not yet run |
+| Test users, cancelled and given back (the command line and the row's Tests menu) | Yes | Yes | Yes | Not yet run |
+| The testing setup and the suite, with the pack's examples | Yes | Yes | Yes | Not yet run |
+| Export and import the database | Yes | Yes | Yes | Not yet run |
+| The row in the dashboard, and remove | Yes | Yes | Yes | Not yet run |
 
-"Yes" means it was run on a real wiki of that runtime. "Not yet run" means the code is there and covered by the unit tests, and nobody ran it on a real wiki yet.
+"Yes" means it was run on a real wiki of that runtime. On Docker Compose and Kubernetes the installer needs webship/workspace#723: before it, the name of the wiki and the account given to the installer come apart at their spaces there.
 
 | Runtime | The wiki's address | What the project carries |
 | --- | --- | --- |
