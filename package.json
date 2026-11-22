@@ -83,8 +83,10 @@
       ]
     },
     "features": [
-      "features/mediawiki.feature"
-    ]
+      "features/mediawiki.feature",
+      "features/mediawiki-runtimes.feature"
+    ],
+    "featuresSite": "cmd-mediawiki-project.sh ci-mediawiki --install --add-users --runtime docker"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

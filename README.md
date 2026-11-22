@@ -71,6 +71,7 @@ Everything the builder runs for a wiki runs in the wiki's own container, through
 | `ai/prompts/mediawiki-build-and-test.md`, `mediawiki-scenarios-for-an-area.md` | Two prompts: whole launch commands for a new session |
 | `src/index.ts` | `register(api)`: what the assistant is told about MediaWiki here |
 | `features/mediawiki.feature` | Scenarios for the dashboard's own browser suite |
+| `features/mediawiki-runtimes.feature` | The row, the test users and the pages of a wiki built on Docker Compose and on Kubernetes |
 
 The `workspacePlugin` block in `package.json` is the manifest the installer reads.
 
@@ -108,14 +109,63 @@ bash cmd-mediawiki-project.sh mywiki --install --add-users --visual-editor
 | `--visual-editor` | Turn the visual editor on (VisualEditor; Parsoid is in core) |
 | `--mediawiki-version <x>` | The release to install, for example `1.43.11` (the long-term-support line); empty means the current stable release (1.46.2) |
 | `--php-version <x>` | The PHP of the project container (the current release needs 8.3 or later) |
+| `--runtime <name>` | The container runtime to build on: `ddev` (the default), `docker`, `kubernetes` or `podman`. See [Runtimes](#runtimes) |
 | `--launch` | Open the wiki when it is ready |
 
-The wiki answers at `https://mywiki.ddev.site`, its login at `/index.php?title=Special:UserLogin`.
+On DDEV the wiki answers at `https://mywiki.ddev.site`, its login at `/index.php?title=Special:UserLogin`.
 The build adds to `LocalSettings.php`: uploads on, the "confirmed" group (the rights an account
 otherwise earns after 4 days and 10 edits, the thresholds it sets as on large public wikis), the job
 queue run by the service (`$wgJobRunRate = 0`), and the object cache and the sessions in the
 database (the installer picks the PHP process cache, which the maintenance scripts cannot see and a
 restart empties). A project of the same name is deleted first.
+
+### Runtimes
+
+```bash
+bash cmd-mediawiki-project.sh mywiki --install --add-users                        # DDEV, the default
+bash cmd-mediawiki-project.sh mywiki --install --add-users --runtime docker       # Docker Compose
+bash cmd-mediawiki-project.sh mywiki --install --add-users --runtime kubernetes   # a Kubernetes cluster
+```
+
+Without `--runtime` a build takes `container.runtime` of the workspace's `settings.yml`, then DDEV.
+It needs a Webship Workspace with the container runtimes
+([webship/workspace#694](https://github.com/webship/workspace/issues/694)); on an older one the
+builder refuses `--runtime` and builds on DDEV only.
+
+| | DDEV | Docker Compose | Kubernetes | Podman |
+| --- | --- | --- | --- | --- |
+| Build and install, with the default accounts (and the visual editor) | Yes | Yes, with webship/workspace#723 | Yes, with webship/workspace#723 | The same code as Docker Compose, not yet run |
+| The main page, the login page, the REST API and the action API | Yes | Yes | Yes | Not yet run |
+| `cmd-tools-mediawiki-maintenance.sh`: what the wiki is, `--run`, `--jobs` | Yes | Yes | Yes | Not yet run |
+| Test users, cancelled and given back (the command line and the row's Tests menu) | Yes | Yes | Yes | Not yet run |
+| The testing setup and the suite, with the pack's examples | Yes | Yes | Yes | Not yet run |
+| Export and import the database | Yes | Yes | Yes | Not yet run |
+| The row in the dashboard, and remove | Yes | Yes | Yes | Not yet run |
+
+"Yes" means it was run on a real wiki of that runtime. On Docker Compose and Kubernetes the installer needs webship/workspace#723: before it, the name of the wiki and the account given to the installer come apart at their spaces there.
+
+| Runtime | The wiki's address | What the project carries |
+| --- | --- | --- |
+| DDEV | `https://mywiki.ddev.site` | `.ddev/config.yaml` (type `php`), the nginx rule of the REST API, the job service |
+| Docker Compose | `http://127.0.0.1:<port>`, printed by the build | `compose.yaml` (with `platform: mediawiki`: the claim), `.webship/runtime/Dockerfile` |
+| Kubernetes | `http://<node address>:<port>`, printed by the build | The same, and `k8s/` (the namespace `ws-mywiki`) |
+
+What differs on Docker Compose and Kubernetes:
+
+- **The claim:** the project type is `php` there too, so the builder writes `platform: mediawiki` in
+  the `x-webship:` block of `compose.yaml`. The tools and the row's Tests menu read it.
+- **The address** the installer is given (`$wgServer`) is the runtime's.
+- **The web server** is Apache, which passes `rest.php/v1/…` to the REST API by itself: no rule is
+  written. The database is the same: `db` / `db` / `db` on the host `db`.
+- **The job queue:** the stack has no service for it, so the wiki runs its jobs itself at the end
+  of a request (`$wgJobRunRate = 1`, MediaWiki's default). `--jobs` of the maintenance tool runs the
+  waiting ones at once.
+- **Not there yet:** HTTPS and a host name are DDEV's. Podman runs the same code as Docker Compose
+  and was not run yet.
+
+The same commands work on every runtime: `cmd-tools-mediawiki-maintenance.sh`, `cmd-tools-add-users.sh`,
+`cmd-tools-testing.sh`. The pattern is the reference plugin's:
+[On Docker Compose and Kubernetes](https://github.com/webship/workspace-wordpress/blob/1.0.x/docs/cms-plugin-pattern.md#on-docker-compose-and-kubernetes).
 
 ### Work on a wiki
 

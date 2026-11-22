@@ -11,6 +11,14 @@
 # The installer writes the wiki's database settings into LocalSettings.php from the container's own
 # values (db, db, db on the host db), and nothing personal.
 #
+# The runtimes: a wiki is built on DDEV, or with --runtime on Docker Compose, Podman or Kubernetes.
+# The commands are the same on each: `ddev <verb>` is DDEV itself on a DDEV project, and on another
+# runtime the core's layer (fun-runtime.sh) gives the verb its meaning there. What differs is behind
+# mediawiki_runtime: the address (mediawiki_url), the claim of the plugin on the project (rt_claim,
+# which is how a wiki of another runtime is known), and the two things DDEV carries in .ddev/ that
+# the stack of the other runtimes has no place for: the nginx rule of the REST API (Apache, the web
+# server there, needs none) and the job queue as a service (the wiki runs its jobs itself there).
+#
 # Four names are the ones the core's tools look for:
 #   set_mediawiki_users          the default accounts            (cmd-tools-add-users.sh <project> mediawiki)
 #   add_mediawiki_users          create them in the wiki         (the same tool, and --add-users of the builder)
@@ -42,10 +50,25 @@ function set_mediawiki_users() {
   user_reader_role='' ;
 }
 
-# Is this folder a MediaWiki project? A container project with the maintenance runner of the release
-# and the version it defines.
+# The runtime of the project in this folder, or of a new build (--runtime, else the workspace's
+# setting, else DDEV). A core without the runtime layer has DDEV only.
+function mediawiki_runtime() {
+  if declare -f runtime_of > /dev/null ; then runtime_of ; else echo 'ddev' ; fi
+}
+
+# The address of the wiki in this folder: https://<name>.ddev.site on DDEV, http://127.0.0.1:<port>
+# on Docker Compose and Podman, the node's address and a port on Kubernetes. Asked after `ddev config`.
+function mediawiki_url() {
+  if declare -f rt_url > /dev/null ; then rt_url ; else echo "https://${PROJECT_NAME}.ddev.site" ; fi
+}
+
+# Is this folder a MediaWiki project? On Docker Compose, Podman and Kubernetes the claim of the
+# plugin says so (`platform: mediawiki` in the x-webship block of compose.yaml, written by the
+# builder: the core's rt_is_platform reads it). On DDEV, whose project type for it is `php`, a
+# container project with the maintenance runner of the release and the version it defines, as before.
 function mediawiki_is_project() {
   local project_path="$1";
+  if declare -f rt_is_platform > /dev/null && rt_is_platform "${project_path}" mediawiki ; then return 0 ; fi
   [ -f "${project_path}/.ddev/config.yaml" ] && [ -f "${project_path}/maintenance/run.php" ] \
     && grep -q "define( 'MW_VERSION'" "${project_path}/includes/Defines.php" 2>/dev/null ;
 }
@@ -68,7 +91,7 @@ function mediawiki_enter_project() {
     return 1 ;
   fi
   if ! mediawiki_is_project "${project_path}" ; then
-    echo "${doc_name}/${PROJECT_NAME} is not a MediaWiki project (it has no maintenance/run.php and includes/Defines.php of the release)." ;
+    echo "${doc_name}/${PROJECT_NAME} is not a MediaWiki project (it has no maintenance/run.php and includes/Defines.php of the release, and no plugin claims it in compose.yaml)." ;
     return 1 ;
   fi
   cd "${project_path}" || return 1 ;
@@ -94,8 +117,23 @@ $wgAutoConfirmAge = 4 * 86400;
 $wgAutoConfirmCount = 10;
 $wgGroupPermissions['confirmed']['autoconfirmed'] = true;
 $wgGroupPermissions['confirmed']['editsemiprotected'] = true;
+PHPEOF
+  # On DDEV the job queue runs as a service of the web container. The stack of the other runtimes
+  # has no such service: there the wiki runs its jobs itself, at the end of a request, as a wiki
+  # does by default.
+  if [ "$(mediawiki_runtime)" == 'ddev' ] ; then
+    cat >> LocalSettings.php <<'PHPEOF'
 # The job queue runs as a service of the container (.ddev/config.mediawiki-jobs.yaml).
 $wgJobRunRate = 0;
+PHPEOF
+  else
+    cat >> LocalSettings.php <<'PHPEOF'
+# The job queue: the wiki runs its jobs itself, at the end of a request (the container has no
+# service for it on this runtime).
+$wgJobRunRate = 1;
+PHPEOF
+  fi
+  cat >> LocalSettings.php <<'PHPEOF'
 # The object cache and the sessions in the database: the maintenance scripts and the job
 # runner share them with the web requests, and a restart keeps the sessions.
 $wgMainCacheType = CACHE_DB;
@@ -164,7 +202,12 @@ for r in rows:
 # installed by its own installer, the workspace account as its first account.
 function mediawiki_build() {
   trim_project_name ;
-  local base_url="https://${PROJECT_NAME}.ddev.site" ;
+  local base_url runtime ;
+  runtime="$(mediawiki_runtime)" ;
+  if [ "${RUNTIME:-_none_}" != '_none_' ] && [ "${RUNTIME}" != "${runtime}" ] ; then
+    echo "--runtime ${RUNTIME} needs a Webship Workspace with the container runtimes (webship/workspace#694): update the workspace, or build on DDEV." ;
+    exit 1 ;
+  fi
   local release="${MEDIAWIKI_VERSION:-${site_mediawiki_version:-${MEDIAWIKI_DEFAULT_RELEASE}}}" ;
   local major ;
   major="$(echo "${release}" | cut -d. -f1,2)" ;
@@ -182,8 +225,16 @@ function mediawiki_build() {
   # DDEV has no project type for the wiki: php, the wiki at the docroot.
   ddev config --project-type=php --docroot="" --project-name=${PROJECT_NAME} \
     --nodejs-version=$(ddev_nodejs_version) ${php_version:+--php-version=${php_version}} --auto || exit 1 ;
-  mediawiki_write_container_config ;
+  if [ "${runtime}" == 'ddev' ] ; then
+    mediawiki_write_container_config ;
+  else
+    # The project type is `php` on every runtime: on another runtime than DDEV the plugin claims the
+    # project, so the tools and the dashboard know it is a wiki. Apache needs no rule for rest.php.
+    rt_claim mediawiki || exit 1 ;
+  fi
   ddev_up start -y || exit 1 ;
+  # The address is the runtime's to say, once the project is configured: never a written ddev.site.
+  base_url="$(mediawiki_url)" ;
 
   # The release tarball from the release server, unpacked at the docroot in the container.
   ddev exec "curl -sSfL https://releases.wikimedia.org/mediawiki/${major}/mediawiki-${release}.tar.gz | tar -xz --strip-components=1" < /dev/null \
@@ -205,9 +256,12 @@ function mediawiki_build() {
       add_mediawiki_users ;
       cd ${WORKSPACE_ROOT}/${doc_name}/${PROJECT_NAME} || exit 1 ;
     fi
-    # The job queue as a service: it needs the installed wiki, and starts with this restart.
-    mediawiki_write_jobs_service ;
-    ddev restart || exit 1 ;
+    # The job queue as a service: it needs the installed wiki, and starts with this restart. A
+    # service of DDEV's web container: on another runtime the wiki runs its jobs itself.
+    if [ "${runtime}" == 'ddev' ] ; then
+      mediawiki_write_jobs_service ;
+      ddev restart || exit 1 ;
+    fi
   elif [ "${ADD_USERS}" == 'yes' ] ; then
     echo "--add-users needs --install: there is no wiki to add accounts to yet." ;
   fi
@@ -306,7 +360,7 @@ function mediawiki_maintenance_tool() {
     set_mediawiki_users ;
     cancel_mediawiki_users ;
   else
-    echo "${doc_name}/${PROJECT_NAME}: MediaWiki $(mediawiki_version) at https://${PROJECT_NAME}.ddev.site" ;
+    echo "${doc_name}/${PROJECT_NAME}: MediaWiki $(mediawiki_version) at $(mediawiki_url)" ;
     if mediawiki_installed ; then
       echo "  Extensions: $(sed -nE "s/^wfLoadExtension\( '([^']+)'.*/\1/p" LocalSettings.php | tr '\n' ' ')" ;
       echo "" ; echo "Accounts:" ;
