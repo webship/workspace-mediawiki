@@ -39,8 +39,10 @@ bash cmd-mediawiki-project.sh mywiki --install --add-users --visual-editor
 | `--php-version <x>` | The PHP of the project container (8.3 or 8.4: the current release needs 8.3 or later). |
 | `--launch` | Opens the wiki when it is ready. |
 
-The wiki answers at `https://mywiki.ddev.site`, its login at `/index.php?title=Special:UserLogin`.
-A project of the same name is deleted first: never build over a wiki somebody still needs.
+On DDEV the wiki answers at `https://mywiki.ddev.site`, its login at `/index.php?title=Special:UserLogin`.
+With `--runtime docker` or `--runtime kubernetes` it is built on Docker Compose or a Kubernetes
+cluster, at the address the build prints (`http://127.0.0.1:<port>`, or the node's address and a
+port): never write a `ddev.site` address for such a wiki. A project of the same name is deleted first: never build over a wiki somebody still needs.
 
 What the build does, so you can explain it:
 

@@ -4,8 +4,9 @@
 
 # Installed by the MediaWiki plugin (plugins.sh --install mediawiki); __WORKSPACE__ is the workspace it was installed into.
 #
-# Build a wiki in a container from the MediaWiki release tarball, at https://<name>.ddev.site (DDEV
-# project type php, the wiki at the docroot). With --install it is installed by its own installer on
+# Build a wiki in a container from the MediaWiki release tarball: on DDEV (the default) at
+# https://<name>.ddev.site (project type php, the wiki at the docroot), and with --runtime docker,
+# podman or kubernetes on that runtime, at the address the build prints. With --install it is installed by its own installer on
 # the container's database, with the extensions a default wiki uses, and the workspace account is its
 # first account; with --add-users it also gets the default accounts; with --visual-editor, the visual
 # editor.
